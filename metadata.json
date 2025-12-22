@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Copy of Projeto Respirar",
+  "description": "Uma plataforma integrada para gestão de pacientes pediátricos com traqueostomia, facilitando o agendamento de consultas e o acompanhamento clínico.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
