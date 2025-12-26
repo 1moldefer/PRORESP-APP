@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import Layout from './Layout';
 import { Patient } from '../types';
-import { getClinicalSummary, getSurgicalHistorySummary } from '../geminiService';
+import { getClinicalSummary, getSurgicalHistorySummary } from '../openaiService';
 import { supabase } from '../supabaseClient';
 import { useAuth } from './AuthContext';
 

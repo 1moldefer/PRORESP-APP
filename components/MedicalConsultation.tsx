@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Layout from './Layout';
 import { supabase } from '../supabaseClient';
-import { draftClinicalNotes } from '../geminiService';
+import { draftClinicalNotes } from '../openaiService';
 import DocumentGenerator from './DocumentGenerator';
 
 const MedicalConsultation: React.FC = () => {
