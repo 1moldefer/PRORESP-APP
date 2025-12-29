@@ -114,10 +114,10 @@ ${payload.stats}
         }
 
         const openaiData = await openaiResponse.json();
-        const result = openaiData.choices[0]?.message?.content || 'Sem resposta da IA.';
+        const content = openaiData.choices[0]?.message?.content || 'Sem resposta da IA.';
 
         return new Response(
-            JSON.stringify({ result }),
+            JSON.stringify({ content }),
             {
                 headers: {
                     'Content-Type': 'application/json',
