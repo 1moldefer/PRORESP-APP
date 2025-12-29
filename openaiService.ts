@@ -7,7 +7,41 @@ import { Patient } from "./types";
 
 const callOpenAI = async (systemPrompt: string, userPrompt: string): Promise<string> => {
     try {
-        console.log("Calling Supabase Edge Function: ai-service");
+        // @ts-ignore - Vite env exists at runtime
+        const localKey = import.meta.env.VITE_OPENAI_API_KEY;
+
+        // Development Mode: Use local API key if available
+        if (localKey && localKey.length > 20 && !localKey.includes('sua-chave')) {
+            console.log("🔧 Dev Mode: Calling OpenAI API directly...");
+
+            const response = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localKey}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model: 'gpt-4o-mini',
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    temperature: 0.7,
+                    max_tokens: 2000,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(`OpenAI API error: ${errorData.error?.message || 'Unknown error'}`);
+            }
+
+            const data = await response.json();
+            return data.choices[0]?.message?.content || 'Sem resposta da IA.';
+        }
+
+        // Production Mode: Use Supabase Edge Function (secure backend)
+        console.log("🚀 Production Mode: Calling Supabase Edge Function...");
 
         const { data, error } = await supabase.functions.invoke('ai-service', {
             body: { systemPrompt, userPrompt }
@@ -15,16 +49,19 @@ const callOpenAI = async (systemPrompt: string, userPrompt: string): Promise<str
 
         if (error) {
             console.error("Supabase Function Error:", error);
-            throw new Error(error.message || 'Erro ao comunicar com o serviço de IA.');
+            throw new Error(error.message || 'Erro ao comunicar com o serviço de IA no backend.');
         }
 
-        return data.content || 'Sem resposta da IA.';
+        return data?.content || 'Sem resposta da IA.';
+
     } catch (error: any) {
-        console.error('AI Service Exception:', error);
-        // Fallback message if function is not deployed yet
-        if (error.message?.includes('FunctionsFetchError')) {
-            return "Erro: O serviço de IA (Edge Function) ainda não foi implantado no Supabase. Por favor, execute o deploy seguindo o guia SETUP_AI_SERVICE.md.";
+        console.error('AI Service Error:', error);
+
+        // User-friendly error messages
+        if (error.message?.includes('FunctionsFetchError') || error.message?.includes('Failed to fetch')) {
+            throw new Error('⚠️ Serviço de IA indisponível. Certifique-se de que a Edge Function foi deployada no Supabase ou configure VITE_OPENAI_API_KEY no .env.local para desenvolvimento local.');
         }
+
         throw error;
     }
 };
