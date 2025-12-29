@@ -6,11 +6,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "supabase:login": "supabase login",
+    "supabase:link": "supabase link",
+    "supabase:deploy": "supabase functions deploy ai-service",
+    "supabase:logs": "supabase functions logs ai-service",
+    "supabase:serve": "supabase functions serve ai-service"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
-    "openai": "^6.15.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-router-dom": "6.28.0"

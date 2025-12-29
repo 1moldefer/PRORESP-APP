@@ -2,6 +2,7 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import { useLanguage } from './LanguageContext';
 
 interface SidebarProps {
   mobileOpen: boolean;
@@ -12,6 +13,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { signOut, user } = useAuth();
+  const { t } = useLanguage();
   const isActive = (path: string) => location.pathname.startsWith(path);
 
   const handleLogout = async () => {
@@ -20,14 +22,11 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) => {
   };
 
   const navItems = [
-    { path: '/dashboard', label: 'Painel', icon: 'dashboard' },
-    { path: '/triage', label: 'Triagem', icon: 'emergency_home' },
-    { path: '/agenda', label: 'Agenda', icon: 'calendar_month' },
-    { path: '/patients', label: 'Pacientes', icon: 'groups' },
-    { path: '/surgical-maps', label: 'Mapas Cirúrgicos', icon: 'surgical' },
-    { path: '/doctors', label: 'Médicos', icon: 'stethoscope' },
-    { path: '/locations', label: 'Locais', icon: 'apartment' },
-    { path: '/cities', label: 'Cidades', icon: 'location_city' },
+    { path: '/dashboard', label: t('sidebar.dashboard'), icon: 'dashboard' },
+    { path: '/agenda', label: t('sidebar.agenda'), icon: 'calendar_month' },
+    { path: '/patients', label: t('sidebar.patients'), icon: 'groups' },
+    { path: '/doctors', label: t('sidebar.doctors'), icon: 'stethoscope' },
+    { path: '/locations', label: t('sidebar.locations'), icon: 'apartment' },
   ];
 
   return (
@@ -55,7 +54,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) => {
                 </div>
                 <div className="flex flex-col">
                   <h1 className="text-slate-900 dark:text-white text-base font-bold leading-none">Projeto Respirar</h1>
-                  <p className="text-primary text-xs font-semibold leading-normal mt-1">Traqueostomia Infantil</p>
+                  <p className="text-primary text-xs font-semibold leading-normal mt-1">{t('sidebar.subtitle')}</p>
                 </div>
               </div>
               {/* Mobile Close Button */}
@@ -86,26 +85,38 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) => {
           </div>
 
           <div className="border-t border-slate-200 dark:border-slate-800 pt-4 mt-auto">
-            <button className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-gray-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors w-full mb-2">
+            <button
+              onClick={() => {
+                navigate('/settings');
+                setMobileOpen(false);
+              }}
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-600 dark:text-gray-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors w-full mb-2"
+            >
               <span className="material-symbols-outlined text-[22px]">settings</span>
-              <span className="text-sm font-medium">Configurações</span>
+              <span className="text-sm font-medium">{t('sidebar.settings')}</span>
             </button>
             <button
               onClick={handleLogout}
               className="flex items-center gap-3 px-3 py-2 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors w-full text-left"
             >
               <span className="material-symbols-outlined text-[22px]">logout</span>
-              <span className="text-sm font-medium">Sair</span>
+              <span className="text-sm font-medium">{t('sidebar.logout')}</span>
             </button>
-            <div className="flex items-center gap-3 mt-6 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl">
+            <div
+              onClick={() => {
+                navigate('/profile');
+                setMobileOpen(false);
+              }}
+              className="flex items-center gap-3 mt-6 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
               <img
-                src="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=100&h=100&fit=crop"
+                src={user?.user_metadata?.avatar_url || "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=100&h=100&fit=crop"}
                 alt="Profile"
                 className="size-9 rounded-full object-cover ring-2 ring-primary/20"
               />
               <div className="flex flex-col overflow-hidden">
-                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{user?.email?.split('@')[0] || 'Usuario'}</p>
-                <p className="text-[11px] text-slate-500 dark:text-gray-400 truncate">Logado</p>
+                <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Usuario'}</p>
+                <p className="text-[11px] text-slate-500 dark:text-gray-400 truncate">{t('sidebar.logged')}</p>
               </div>
             </div>
           </div>
@@ -114,5 +125,4 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) => {
     </>
   );
 };
-
 export default Sidebar;

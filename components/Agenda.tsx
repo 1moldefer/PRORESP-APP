@@ -1,202 +1,258 @@
-
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Layout from './Layout';
-import { Link } from 'react-router-dom';
-import { supabase } from '../supabaseClient';
+import { useAgenda } from '../hooks/useAgenda';
+import PageHeader from './ui/PageHeader';
+import StatCard from './ui/StatCard';
+import AppointmentCard from './ui/AppointmentCard';
 
 const Agenda: React.FC = () => {
-  const [appointments, setAppointments] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    appointments,
+    loading,
+    stats,
+    filters,
+    totalCount,
+    currentPage,
+    pageSize,
+    isSelectionMode,
+    selectedIds,
+    setIsSelectionMode,
+    setSelectedIds,
+    setCurrentPage,
+    updateFilter,
+    handleCancel,
+    handleDelete,
+    toggleSelection
+  } = useAgenda();
 
-  // Filter states
-  const [searchText, setSearchText] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const totalPages = Math.ceil(totalCount / pageSize);
 
-  useEffect(() => {
-    // Set default date range to current month
+  const getTodayLocal = () => {
     const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-
-    setStartDate(firstDay.toISOString().split('T')[0]);
-    setEndDate(lastDay.toISOString().split('T')[0]);
-  }, []);
-
-  useEffect(() => {
-    if (startDate && endDate) {
-      fetchAppointments();
-    }
-  }, [startDate, endDate, searchText]);
-
-  const fetchAppointments = async () => {
-    setLoading(true);
-
-    let query = supabase
-      .from('appointments')
-      .select('*, patients(name), doctors(name, specialty)')
-      .gte('date', startDate)
-      .lte('date', endDate)
-      .order('date', { ascending: true })
-      .order('time', { ascending: true });
-
-    // Apply text search if provided
-    if (searchText) {
-      query = query.or(`patients.name.ilike.%${searchText}%,doctors.name.ilike.%${searchText}%`);
-    }
-
-    const { data } = await query;
-
-    if (data) setAppointments(data);
-    setLoading(false);
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
-  const handleCancel = async (id: string) => {
-    const reason = window.prompt("Motivo do cancelamento:");
-    if (!reason) return;
+  const isTodayFilter = filters.startDate === getTodayLocal() && filters.endDate === getTodayLocal();
 
-    const { error } = await supabase
-      .from('appointments')
-      .update({ status: 'Cancelada', cancellation_reason: reason })
-      .eq('id', id);
-
-    if (error) {
-      alert('Erro ao cancelar: ' + error.message);
-    } else {
-      alert('Consulta cancelada com sucesso.');
-      fetchAppointments();
-    }
-  };
-
-  const stats = [
-    { label: "Total", val: appointments.length, icon: "event_note", color: "slate" },
-    { label: "Pendentes", val: appointments.filter(a => a.status === 'Agendada').length, icon: "schedule", color: "amber" },
-    { label: "Confirmados", val: appointments.filter(a => a.status === 'Realizada').length, icon: "check_circle", color: "primary" },
-    { label: "Cancelados", val: appointments.filter(a => a.status === 'Cancelada').length, icon: "cancel", color: "rose" },
+  const statItems = [
+    { title: "Total", value: stats.total, icon: "event_note", color: "text-slate-500 bg-slate-50" },
+    { title: "Pendentes", value: stats.pending, icon: "schedule", color: "text-amber-500 bg-amber-50" },
+    { title: "Realizados", value: stats.realized, icon: "check_circle", color: "text-primary bg-primary/10" },
+    { title: "Cancelados", value: stats.cancelled, icon: "cancel", color: "text-rose-500 bg-rose-50" },
   ];
+
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    if (window.confirm(`ATENÇÃO: Deseja excluir permanentemente os ${selectedIds.length} agendamentos selecionados? Esta ação é irreversível.`)) {
+      handleDelete(selectedIds);
+    }
+  };
+
+  const handleSingleDelete = (id: string) => {
+    if (window.confirm("Deseja excluir este agendamento permanentemente?")) {
+      handleDelete([id]);
+    }
+  };
 
   return (
     <Layout>
-      <div className="max-w-5xl mx-auto flex flex-col gap-10 animate-in fade-in duration-500">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-slate-200 dark:border-slate-800 pb-8">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-3xl md:text-5xl font-black leading-tight tracking-tighter text-slate-900 dark:text-white">Agenda</h1>
-            <div className="flex items-center gap-3 text-primary">
-              <span className="material-symbols-outlined text-[24px]">calendar_today</span>
-              <p className="text-lg font-bold">Visão Geral</p>
-            </div>
-          </div>
-          <Link to="/agenda/new" className="flex items-center justify-center gap-3 rounded-2xl h-14 px-8 bg-primary text-white text-base font-black shadow-xl shadow-primary/10 hover:bg-primary-dark transition-all">
-            <span className="material-symbols-outlined">add</span>
-            <span>Novo Agendamento</span>
-          </Link>
-        </div>
+      <div className="flex flex-col gap-8 animate-in fade-in duration-500 mb-12">
+        <PageHeader
+          title="Agenda Médica"
+          description="Gerencie as consultas e o fluxo de atendimento."
+          actionLabel="Novo Agendamento"
+          actionLink="/agenda/new"
+        />
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {stats.map((stat, i) => (
-            <div key={i} className="flex flex-col gap-1 rounded-2xl p-5 bg-white dark:bg-surface-dark border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className={`flex items-center gap-2 mb-2 ${stat.color === 'primary' ? 'text-primary' : stat.color === 'amber' ? 'text-amber-500' : stat.color === 'rose' ? 'text-rose-500' : 'text-slate-400'}`}>
-                <span className="material-symbols-outlined text-[20px]">{stat.icon}</span>
-                <p className="text-[10px] font-black uppercase tracking-widest opacity-60">{stat.label}</p>
-              </div>
-              <p className="text-slate-900 dark:text-white text-3xl font-black">{stat.val}</p>
-            </div>
+        <section className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {statItems.map((stat, i) => (
+            <StatCard
+              key={i}
+              title={stat.title}
+              value={stat.value}
+              icon={stat.icon}
+              colorClass={stat.color}
+              loading={loading}
+            />
           ))}
-        </div>
+        </section>
 
         {/* Filters */}
-        <div className="bg-white dark:bg-surface-dark rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="text-xs font-black text-slate-400 uppercase tracking-wider mb-2 block">Data Inicial</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-medium focus:border-primary focus:ring-0 focus:outline-none transition-all"
-              />
+        <section className="bg-white dark:bg-surface-dark rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm transition-all">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
+            <div className="md:col-span-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Período Inicial</label>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(e) => updateFilter('startDate', e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold focus:border-primary focus:ring-4 focus:ring-primary/10 focus:outline-none transition-all"
+                />
+                <span className="material-symbols-outlined absolute left-3 top-3 text-slate-400 text-xl">calendar_today</span>
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-black text-slate-400 uppercase tracking-wider mb-2 block">Data Final</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-medium focus:border-primary focus:ring-0 focus:outline-none transition-all"
-              />
+            <div className="md:col-span-1">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Período Final</label>
+              <div className="relative">
+                <input
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(e) => updateFilter('endDate', e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold focus:border-primary focus:ring-4 focus:ring-primary/10 focus:outline-none transition-all"
+                />
+                <span className="material-symbols-outlined absolute left-3 top-3 text-slate-400 text-xl">calendar_month</span>
+              </div>
             </div>
-            <div>
-              <label className="text-xs font-black text-slate-400 uppercase tracking-wider mb-2 block">Buscar</label>
-              <input
-                type="text"
-                placeholder="Nome do paciente ou médico..."
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-medium placeholder:text-slate-400 focus:border-primary focus:ring-0 focus:outline-none transition-all"
-              />
+            <div className="md:col-span-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">Filtrar por Paciente ou Médico</label>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Digite para buscar..."
+                  value={filters.searchText}
+                  onChange={(e) => updateFilter('searchText', e.target.value)}
+                  className="w-full pl-10 pr-4 py-3 rounded-2xl border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold placeholder:text-slate-400 focus:border-primary focus:ring-4 focus:ring-primary/10 focus:outline-none transition-all"
+                />
+                <span className="material-symbols-outlined absolute left-3 top-3 text-slate-400 text-xl">search</span>
+              </div>
             </div>
+          </div>
+        </section>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2">
+          <div className="flex items-center gap-3">
+            <h2 className="flex items-center gap-3 text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight">
+              <span className="material-symbols-outlined text-primary">view_list</span>
+              {isTodayFilter ? 'Agendamentos de Hoje' : 'Lista de Agendamentos'}
+              <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 px-3 py-1 rounded-full text-xs font-black">{totalCount} registros</span>
+            </h2>
+            {isTodayFilter && (
+              <div className="hidden lg:flex items-center gap-2 bg-emerald-50 text-emerald-600 px-4 py-2 rounded-2xl border border-emerald-100 animate-in slide-in-from-right duration-500">
+                <span className="material-symbols-outlined text-sm">auto_awesome</span>
+                <span className="text-[10px] font-black uppercase tracking-wider">Mostrando atendimentos do dia</span>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {!isSelectionMode ? (
+              <button
+                onClick={() => setIsSelectionMode(true)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-black text-[10px] uppercase tracking-wider hover:bg-slate-200 transition-all"
+              >
+                <span className="material-symbols-outlined text-[18px]">check_box</span>
+                Selecionar
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 animate-in zoom-in duration-200">
+                <span className="text-[10px] font-black text-indigo-500 uppercase mr-2">{selectedIds.length} selecionados</span>
+                <button
+                  onClick={handleBulkDelete}
+                  disabled={selectedIds.length === 0}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-rose-500 text-white font-black text-[10px] uppercase tracking-wider hover:bg-rose-600 transition-all shadow-lg shadow-rose-200 dark:shadow-none disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                  Excluir Selecionados
+                </button>
+                <button
+                  onClick={() => { setIsSelectionMode(false); setSelectedIds([]); }}
+                  className="px-4 py-2.5 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 font-black text-[10px] uppercase tracking-wider hover:bg-slate-50 transition-all font-black"
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="flex flex-col gap-4">
+        <section className="flex flex-col gap-4 min-h-[400px]">
           {loading ? (
-            <p className="text-center text-slate-400 py-12">Carregando agenda...</p>
+            [1, 2, 3].map(i => (
+              <div key={i} className="h-32 bg-white dark:bg-slate-800 rounded-[32px] border border-slate-200 dark:border-slate-800 animate-pulse"></div>
+            ))
           ) : appointments.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 text-slate-400 gap-4 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-3xl">
-              <span className="material-symbols-outlined text-[48px] opacity-20">event_busy</span>
-              <p className="font-bold">Nenhum agendamento encontrado.</p>
+            <div className="flex flex-col items-center justify-center py-32 text-slate-400 gap-6 border-4 border-dashed border-slate-100 dark:border-slate-800/50 rounded-[40px] bg-slate-50/50 dark:bg-transparent">
+              <div className="size-24 rounded-full bg-white dark:bg-slate-800 shadow-xl flex items-center justify-center">
+                <span className="material-symbols-outlined text-[48px] opacity-20">event_busy</span>
+              </div>
+              <div className="text-center">
+                <p className="font-black text-xl text-slate-900 dark:text-white mb-1">{filters.searchText ? 'Nenhum resultado para a busca' : 'Nenhum agendamento encontrado'}</p>
+                <p className="text-sm font-medium">Tente alterar os filtros de data ou o termo de busca.</p>
+              </div>
+              {(isTodayFilter || filters.searchText) && (
+                <button
+                  onClick={() => {
+                    updateFilter('startDate', '');
+                    updateFilter('endDate', '');
+                    updateFilter('searchText', '');
+                  }}
+                  className="px-6 py-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl text-xs font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+                >
+                  Limpar Todos os Filtros
+                </button>
+              )}
             </div>
           ) : (
-            appointments.map((apt, i) => (
-              <div key={i} className={`group relative flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 rounded-3xl bg-white dark:bg-surface-dark p-6 border-l-[6px] shadow-sm border-slate-200 dark:border-slate-800 transition-all hover:shadow-md ${apt.status === 'Realizada' ? 'border-l-primary' :
-                apt.status === 'Agendada' ? 'border-l-amber-400' : 'border-l-rose-400'
-                }`}>
-                <div className="flex items-start gap-6 flex-1">
-                  <div className="flex flex-col items-center justify-start pt-1 min-w-[70px]">
-                    <span className={`text-2xl font-black ${apt.status === 'Realizada' ? 'text-primary' : 'text-slate-900 dark:text-white'}`}>{apt.time?.slice(0, 5)}</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase mt-1">{new Date(apt.date).getDate()}/{new Date(apt.date).getMonth() + 1}</span>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <Link to={`/patients/${apt.patient_id}`} className="hover:underline hover:text-primary transition-colors">
-                      <h3 className="text-xl font-black text-slate-900 dark:text-white">{apt.patients?.name || 'Paciente desconhecido'}</h3>
-                    </Link>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span className={`px-3 py-1 rounded-full text-[10px] uppercase font-black tracking-widest ${apt.status === 'Agendada' ? 'bg-amber-50 text-amber-700' :
-                        apt.status === 'Realizada' ? 'bg-emerald-50 text-emerald-700' :
-                          'bg-rose-50 text-rose-700'
-                        }`}>
-                        {apt.status}
-                      </span>
-                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{apt.doctors?.specialty || 'Especialidade'}</span>
-                      <span className="text-[11px] font-bold text-slate-500">Dr(a). {apt.doctors?.name || ''}</span>
-                    </div>
-                    {apt.cancellation_reason && (
-                      <p className="text-xs text-rose-500 italic mt-1">Motivo: {apt.cancellation_reason}</p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Link
-                    to={`/patients/${apt.patient_id}`}
-                    title="Acessar Prontuário"
-                    className="size-11 flex items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 hover:bg-indigo-100 hover:text-indigo-600 transition-all"
-                  >
-                    <span className="material-symbols-outlined">assignment_ind</span>
-                  </Link>
-                  {apt.status !== 'Cancelada' && (
-                    <button
-                      onClick={() => handleCancel(apt.id)}
-                      title="Cancelar Consulta"
-                      className="size-11 flex items-center justify-center rounded-2xl bg-rose-50 dark:bg-rose-900/20 text-rose-400 hover:bg-rose-100 hover:text-rose-600 transition-all"
-                    >
-                      <span className="material-symbols-outlined">cancel</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))
+            <div className="flex flex-col gap-4">
+              {appointments.map((apt) => (
+                <AppointmentCard
+                  key={apt.id}
+                  appointment={apt}
+                  isSelectionMode={isSelectionMode}
+                  isSelected={selectedIds.includes(apt.id)}
+                  onToggleSelection={toggleSelection}
+                  onCancel={handleCancel}
+                  onDelete={handleSingleDelete}
+                />
+              ))}
+            </div>
           )}
-        </div>
+        </section>
+
+        {/* Pagination */}
+        {!loading && totalPages > 1 && (
+          <div className="flex items-center justify-center gap-2 mt-4 pb-8">
+            <button
+              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+              disabled={currentPage === 1}
+              className="size-10 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 disabled:opacity-30 hover:bg-slate-50 transition-all font-black shadow-sm"
+            >
+              <span className="material-symbols-outlined">chevron_left</span>
+            </button>
+
+            <div className="flex items-center gap-2">
+              {[...Array(totalPages)].map((_, i) => {
+                const page = i + 1;
+                if (totalPages > 5 && Math.abs(page - currentPage) > 2) return null;
+
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`size-10 flex items-center justify-center rounded-xl font-black text-sm transition-all shadow-sm ${currentPage === page
+                      ? 'bg-primary text-white scale-110'
+                      : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50'
+                      }`}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+              disabled={currentPage === totalPages}
+              className="size-10 flex items-center justify-center rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 disabled:opacity-30 hover:bg-slate-50 transition-all font-black shadow-sm"
+            >
+              <span className="material-symbols-outlined">chevron_right</span>
+            </button>
+          </div>
+        )}
       </div>
     </Layout>
   );

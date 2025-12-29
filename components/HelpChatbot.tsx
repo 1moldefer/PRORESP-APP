@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import OpenAI from 'openai';
+import { supabase } from '../supabaseClient';
 
 interface Message {
     role: 'user' | 'assistant' | 'system';
@@ -36,59 +36,19 @@ const HelpChatbot: React.FC = () => {
         setLoading(true);
 
         try {
-            const apiKey = import.meta.env.VITE_OPENAI_API_KEY;
-
-            if (!apiKey) {
-                setMessages(prev => [...prev, {
-                    role: 'assistant',
-                    content: 'Desculpe, a chave da API (VITE_OPENAI_API_KEY) não está configurada.'
-                }]);
-                return;
-            }
-
-            const openai = new OpenAI({
-                apiKey: apiKey,
-                dangerouslyAllowBrowser: true
+            const { data, error } = await supabase.functions.invoke('ai-service', {
+                body: {
+                    action: 'chat',
+                    payload: {
+                        messages: messages.map(m => ({ role: m.role, content: m.content })),
+                        userMessage
+                    }
+                }
             });
 
-            const systemPrompt = `
-        Você é o Assistente Virtual do PRORESP (Projeto Respirar), um sistema de gestão de pacientes em homecare e traqueostomia. 🏥💙
-        
-        SUA PERSONALIDADE:
-        - Use "figurinhas" (emojis) para tornar a conversa amigável! 😊
-        - Seja didático e explique tudo com PASSO A PASSO (1., 2., 3...). 📝
-        - Mantenha um tom profissional, mas acolhedor.
-        
-        COMO FORMATAR SUAS RESPOSTAS:
-        - Use títulos em CAIXA ALTA para destacar tópicos.
-        - NÃO use negrito, itálico ou asteriscos (**). Escreva o texto limpo.
-        - Sempre que explicar uma função, use lista numerada. OBRIGATÓRIO: Um passo por linha.
-        - Use emojis no início ou fim das frases.
-        
-        CONHECIMENTO DA PLATAFORMA:
-        1. AGENDA 📅: Permite agendar consultas e cirurgias, ver conflitos de horário e visualizar por dia/semana/mês.
-        
-        2. PACIENTES 👶: Cadastro completo (dados clínicos, comorbidades), histórico de internações e geração de PDF da Ficha de Admissão.
-        
-        3. MAPAS CIRÚRGICOS (Novo!) 🏥: Gestão completa de cirurgias (Data, Procedimento, Médicos, OPME). Tem botão de imprimir!
-        
-        4. GESTÃO ⚙️: Cadastros de Médicos, Cidades e Locais.
-        
-        Se o usuário perguntar algo fora do sistema, diga gentilmente (com emoji 😅) que só pode ajudar com o PRORESP.
-        Se for erro grave, sugira o suporte WhatsApp. 📲
-      `;
+            if (error) throw new Error(error.message);
 
-            const response = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    ...messages.map(m => ({ role: m.role, content: m.content })),
-                    { role: 'user', content: userMessage }
-                ],
-            });
-
-            const assistantMessage = response.choices[0]?.message?.content || 'Desculpe, não entendi.';
-
+            const assistantMessage = data.result || 'Desculpe, não entendi.';
             setMessages(prev => [...prev, { role: 'assistant', content: assistantMessage }]);
 
         } catch (error) {

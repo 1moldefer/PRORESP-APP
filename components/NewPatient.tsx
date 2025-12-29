@@ -2,18 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from './Layout';
 import { supabase } from '../supabaseClient';
+import { cleanDigits, formatSUS, formatPhone, formatCEP, formatCPF, validateSUS, validatePhone, validateCEP, validateCPF } from '../utils/maskUtils';
 
 const NewPatient: React.FC = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [addressLoading, setAddressLoading] = useState(false);
   const [cities, setCities] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState(0);
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   const [formData, setFormData] = useState({
     // Dados Pessoais
     name: '', cpf: '', mother_name: '', gender: '', medical_record: '', sus_card: '',
-    birth_date: '', cep: '', address: '', address_complement: '', phone: '', social_network: '',
-    city: '', tracheostomy_active: false, homecare_active: false,
+    birth_date: '', cep: '', address: '', address_complement: '',
+    phone: '', social_network: '',
+    city: '', state: '',
+    tracheostomy_active: false, homecare_active: false,
 
     // Dados de Nascimento/Gestação
     birth_type: '', apgar: '', cephalic_perimeter: '', birth_weight: '', gestational_age: '',
@@ -61,8 +66,128 @@ const NewPatient: React.FC = () => {
     }
   };
 
+  // Masked Input Handlers
+  const handleSUSChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const cleaned = cleanDigits(raw).slice(0, 15);
+    setFormData({ ...formData, sus_card: cleaned });
+
+    if (cleaned.length > 0 && cleaned.length < 15) {
+      setErrors(prev => ({ ...prev, sus_card: 'CNS deve ter 15 dígitos.' }));
+    } else {
+      setErrors(prev => { const newErr = { ...prev }; delete newErr.sus_card; return newErr; });
+    }
+  };
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const cleaned = cleanDigits(raw).slice(0, 11);
+    setFormData({ ...formData, phone: cleaned });
+
+    if (cleaned.length > 0 && !validatePhone(cleaned)) {
+      setErrors(prev => ({ ...prev, phone: 'Celular inválido. Use (DD) 9XXXX-XXXX.' }));
+    } else {
+      setErrors(prev => { const newErr = { ...prev }; delete newErr.phone; return newErr; });
+    }
+  };
+
+  const handleCEPChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const cleaned = cleanDigits(raw).slice(0, 8);
+    setFormData({ ...formData, cep: cleaned });
+
+    if (cleaned.length > 0 && cleaned.length < 8) {
+      setErrors(prev => ({ ...prev, cep: 'CEP incompleto.' }));
+    } else {
+      setErrors(prev => { const newErr = { ...prev }; delete newErr.cep; return newErr; });
+    }
+  };
+
+  const handleCPFChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    const cleaned = cleanDigits(raw).slice(0, 11);
+    setFormData({ ...formData, cpf: cleaned });
+
+    if (cleaned.length > 0 && !validateCPF(cleaned)) {
+      setErrors(prev => ({ ...prev, cpf: 'CPF incompleto.' }));
+    } else {
+      setErrors(prev => { const newErr = { ...prev }; delete newErr.cpf; return newErr; });
+    }
+  };
+
+  // CEP Integration
+  const handleCepBlur = async () => {
+    const cep = formData.cep; // formData has clean digits now
+    if (validateCEP(cep)) {
+      setAddressLoading(true);
+      try {
+        const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+        const data = await response.json();
+        if (!data.erro) {
+          setFormData(prev => ({
+            ...prev,
+            address: data.logradouro,
+            neighborhood: data.bairro,
+            address_complement: data.complemento,
+            city: data.localidade,
+            state: data.uf
+          }));
+          setErrors(prev => { const newErr = { ...prev }; delete newErr.cep; return newErr; });
+        } else {
+          setErrors(prev => ({ ...prev, cep: 'CEP não encontrado.' }));
+        }
+      } catch (error) {
+        console.error("Erro ao buscar CEP:", error);
+        setErrors(prev => ({ ...prev, cep: 'Erro ao buscar CEP.' }));
+      } finally {
+        setAddressLoading(false);
+      }
+    } else {
+      if (cep.length > 0) setErrors(prev => ({ ...prev, cep: 'CEP inválido.' }));
+    }
+  };
+
+  const getMissingFields = () => {
+    const required = [
+      'name', 'cpf', 'mother_name', 'gender', 'medical_record', 'sus_card',
+      'birth_date', 'cep', 'address', 'address_complement', 'phone', 'social_network', 'city'
+    ];
+
+    const labels: { [key: string]: string } = {
+      name: 'Nome Completo', cpf: 'CPF', mother_name: 'Nome da Mãe', gender: 'Gênero',
+      medical_record: 'Prontuário', sus_card: 'Cartão SUS', birth_date: 'Data de Nascimento',
+      cep: 'CEP', address: 'Endereço',
+      address_complement: 'Complemento', phone: 'Celular',
+      social_network: 'Rede Social', city: 'Cidade'
+    };
+
+    return required.filter(field => !formData[field as keyof typeof formData])
+      .map(field => labels[field] || field);
+  };
+
+  const handleNextStep = () => {
+    if (activeTab === 0) {
+      const missing = getMissingFields();
+      if (missing.length > 0) {
+        alert(`Por favor, preencha os seguintes campos obrigatórios:\n\n- ${missing.join('\n- ')}`);
+        return;
+      }
+    }
+    setActiveTab(activeTab + 1);
+  };
+
   const handleSubmit = async (e: React.FormEvent, isDraft = false) => {
     e.preventDefault();
+
+    // Strict validation for Save
+    if (!isDraft) {
+      const missing = getMissingFields();
+      if (missing.length > 0) {
+        alert(`Por favor, preencha os seguintes campos obrigatórios antes de cadastrar:\n\n- ${missing.join('\n- ')}`);
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -90,11 +215,101 @@ const NewPatient: React.FC = () => {
         }
       });
 
-      const { error } = await supabase.from('patients').insert([{
-        ...cleanedData,
-        avatar_url: avatarUrl,
-        age: formData.birth_date ? new Date().getFullYear() - new Date(formData.birth_date).getFullYear() : null
-      }]);
+      // Map to database column names (snake_case) and exclude fields that don't exist in DB
+      const dbData = {
+        // Personal Data
+        name: cleanedData.name,
+        cpf: cleanedData.cpf,
+        mother_name: cleanedData.mother_name,
+        gender: cleanedData.gender,
+        medical_record: cleanedData.medical_record,
+        sus_card: cleanedData.sus_card,
+        birth_date: cleanedData.birth_date,
+        age: formData.birth_date ? new Date().getFullYear() - new Date(formData.birth_date).getFullYear() : null,
+
+        // Address
+        cep: cleanedData.cep,
+        address: cleanedData.address_complement ? `${cleanedData.address} - ${cleanedData.address_complement}` : cleanedData.address,
+        // address_complement: cleanedData.address_complement, // Removed as column likely doesn't exist (Extended field)
+        city: cleanedData.state ? `${cleanedData.city} - ${cleanedData.state}` : cleanedData.city,
+        // state: cleanedData.state, // Removed as column doesn't exist
+
+        // Contact
+        phone: cleanedData.phone,
+        social_network: cleanedData.social_network,
+
+        // Status
+        tracheostomy_active: cleanedData.tracheostomy_active || false,
+        homecare_active: cleanedData.homecare_active || false,
+
+        // Birth/Gestation Data
+        birth_type: cleanedData.birth_type,
+        apgar: cleanedData.apgar,
+        cephalic_perimeter: cleanedData.cephalic_perimeter,
+        birth_weight: cleanedData.birth_weight,
+        gestational_age: cleanedData.gestational_age,
+        torch_serology: cleanedData.torch_serology,
+        prenatal_complications: cleanedData.prenatal_complications,
+        delivery_room_maneuvers: cleanedData.delivery_room_maneuvers,
+        intubation_date: cleanedData.intubation_date,
+        intubation_time: cleanedData.intubation_time,
+        extubation_failure: cleanedData.extubation_failure,
+        accidental_extubation: cleanedData.accidental_extubation,
+        intubation_cause: cleanedData.intubation_cause,
+        pcr: cleanedData.pcr || false,
+        severe_hypoxia: cleanedData.severe_hypoxia || false,
+        urgent_tqt: cleanedData.urgent_tqt || false,
+        difficult_airway: cleanedData.difficult_airway || false,
+        congenital_stridor: cleanedData.congenital_stridor,
+        previous_surgery: cleanedData.previous_surgery,
+
+        // Clinical Data
+        comorbidities_cardiac: cleanedData.comorbidities_cardiac,
+        comorbidities_digestive: cleanedData.comorbidities_digestive,
+        comorbidities_neurological: cleanedData.comorbidities_neurological,
+        comorbidities_infectious: cleanedData.comorbidities_infectious,
+        comorbidities_genetic: cleanedData.comorbidities_genetic,
+        comorbidities_osteoarticular: cleanedData.comorbidities_osteoarticular,
+        tracheostomy_clinical_history: cleanedData.tracheostomy_clinical_history,
+        dysphagia: cleanedData.dysphagia,
+        hypersialorrhea: cleanedData.hypersialorrhea,
+        recurrent_pneumonia: cleanedData.recurrent_pneumonia,
+        tqt_type: cleanedData.tqt_type,
+        cannula_type: cleanedData.cannula_type,
+        severe_complications: cleanedData.severe_complications,
+
+        // Bronchoscopy
+        bronchoscopy_nostril: cleanedData.bronchoscopy_nostril,
+        nasal_septum_deviation: cleanedData.nasal_septum_deviation,
+        piriform_aperture_stenosis: cleanedData.piriform_aperture_stenosis,
+        choanal_atresia: cleanedData.choanal_atresia,
+        nasal_stenosis: cleanedData.nasal_stenosis,
+        rhinopharynx: cleanedData.rhinopharynx,
+        oropharynx: cleanedData.oropharynx,
+
+        // Larynx Findings
+        larynx_findings: cleanedData.larynx_findings,
+        larynx_preserved: cleanedData.larynx_preserved || false,
+        larynx_arytenoid_redundancy: cleanedData.larynx_arytenoid_redundancy || false,
+        larynx_short_aryepiglottic_ligaments: cleanedData.larynx_short_aryepiglottic_ligaments || false,
+        larynx_omega_epiglottis: cleanedData.larynx_omega_epiglottis || false,
+        larynx_epiglottoptosis: cleanedData.larynx_epiglottoptosis || false,
+        larynx_laryngomalacia: cleanedData.larynx_laryngomalacia || false,
+        larynx_vocal_fold_paralysis: cleanedData.larynx_vocal_fold_paralysis,
+        larynx_vocal_fold_paralysis_position: cleanedData.larynx_vocal_fold_paralysis_position,
+        larynx_vocal_nodules: cleanedData.larynx_vocal_nodules || false,
+        larynx_web: cleanedData.larynx_web,
+        larynx_posterior_glottic_stenosis: cleanedData.larynx_posterior_glottic_stenosis || false,
+        morphological_findings: cleanedData.morphological_findings,
+        glossoptosis: cleanedData.glossoptosis || false,
+        valecula: cleanedData.valecula,
+        piriform_sinus: cleanedData.piriform_sinus,
+
+        // Avatar
+        avatar_url: avatarUrl
+      };
+
+      const { error } = await supabase.from('patients').insert([dbData]);
 
       if (error) throw error;
       alert(isDraft ? 'Rascunho salvo!' : 'Paciente cadastrado com sucesso!');
@@ -113,10 +328,6 @@ const NewPatient: React.FC = () => {
     { id: 3, label: 'Broncoscopia', icon: 'pulmonology' },
     { id: 4, label: 'Laringe e Achados', icon: 'mic' }
   ];
-
-  const handleStepClick = (index: number) => {
-    setActiveTab(index);
-  };
 
   return (
     <Layout>
@@ -171,14 +382,31 @@ const NewPatient: React.FC = () => {
               <div className="flex justify-center mb-6">
                 <div className="relative">
                   {photoPreview ? (
-                    <img src={photoPreview} alt="Preview" className="size-32 rounded-3xl object-cover shadow-lg" />
+                    <img src={photoPreview} alt="Preview" className="size-32 rounded-3xl object-cover shadow-lg touch-none pointer-events-none" />
                   ) : (
                     <div className="size-32 rounded-3xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
                       <span className="material-symbols-outlined text-5xl text-slate-400">person</span>
                     </div>
                   )}
-                  <label className="absolute bottom-0 right-0 size-10 rounded-xl bg-primary text-white flex items-center justify-center cursor-pointer hover:bg-primary-dark transition-all shadow-lg">
-                    <span className="material-symbols-outlined text-[20px]">photo_camera</span>
+
+                  {/* Remove Photo Button */}
+                  {photoPreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPhoto(null);
+                        setPhotoPreview(null);
+                        // Reset file input if needed, but managing state is enough usually
+                      }}
+                      className="absolute -top-3 -right-3 size-8 rounded-full bg-rose-500 text-white flex items-center justify-center shadow-lg hover:bg-rose-600 transition-all z-20 hover:scale-110 active:scale-95"
+                      title="Remover foto"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">close</span>
+                    </button>
+                  )}
+
+                  <label className="absolute -bottom-2 -right-2 size-10 rounded-xl bg-primary text-white flex items-center justify-center cursor-pointer hover:bg-primary-dark transition-all shadow-lg z-10 hover:scale-110 active:scale-95">
+                    <span className="material-symbols-outlined text-[20px]">{photoPreview ? 'edit' : 'photo_camera'}</span>
                     <input type="file" accept="image/*" onChange={handleFileChange} className="hidden" />
                   </label>
                 </div>
@@ -187,16 +415,33 @@ const NewPatient: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
                   <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Nome Completo *</label>
-                  <input required type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
+                  <input type="text" value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Nome da Mãe</label>
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Nome da Mãe *</label>
                   <input type="text" value={formData.mother_name} onChange={e => setFormData({ ...formData, mother_name: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
                 </div>
 
                 <div>
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Gênero</label>
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">CPF *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={formatCPF(formData.cpf)}
+                      onChange={handleCPFChange}
+                      placeholder="000.000.000-00"
+                      maxLength={14}
+                      className={`w-full px-4 py-3 rounded-xl border ${errors.cpf ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-200 dark:border-slate-700'} bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none transition-all`}
+                    />
+                    {errors.cpf && (
+                      <p className="absolute -bottom-5 left-0 text-[10px] font-bold text-rose-500 animate-in slide-in-from-top-1">{errors.cpf}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Gênero *</label>
                   <select value={formData.gender} onChange={e => setFormData({ ...formData, gender: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none">
                     <option value="">Selecione...</option>
                     <option value="Masculino">Masculino</option>
@@ -205,50 +450,111 @@ const NewPatient: React.FC = () => {
                 </div>
 
                 <div>
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Prontuário</label>
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Prontuário *</label>
                   <input type="text" value={formData.medical_record} onChange={e => setFormData({ ...formData, medical_record: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
                 </div>
 
                 <div>
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Cartão SUS</label>
-                  <input type="text" value={formData.sus_card} onChange={e => setFormData({ ...formData, sus_card: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Cartão SUS *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={formatSUS(formData.sus_card)}
+                      onChange={handleSUSChange}
+                      placeholder="999 9999 9999 9999"
+                      maxLength={18} // 15 digits + 3 spaces
+                      className={`w-full px-4 py-3 rounded-xl border ${errors.sus_card ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-200 dark:border-slate-700'} bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none transition-all`}
+                    />
+                    {errors.sus_card && (
+                      <p className="absolute -bottom-5 left-0 text-[10px] font-bold text-rose-500 animate-in slide-in-from-top-1">{errors.sus_card}</p>
+                    )}
+                  </div>
                 </div>
 
                 <div>
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Data de Nascimento</label>
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Data de Nascimento *</label>
                   <input type="date" value={formData.birth_date} onChange={e => setFormData({ ...formData, birth_date: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
                 </div>
 
                 <div>
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">CEP</label>
-                  <input type="text" value={formData.cep} onChange={e => setFormData({ ...formData, cep: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">CEP *</label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={formatCEP(formData.cep)}
+                      onChange={handleCEPChange}
+                      onBlur={handleCepBlur}
+                      placeholder="00000-000"
+                      maxLength={9} // 8 digits + 1 hyphen
+                      className={`w-full px-4 py-3 rounded-xl border ${errors.cep ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-200 dark:border-slate-700'} bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none transition-all`}
+                    />
+                    {addressLoading && (
+                      <div className="absolute right-4 top-1/2 -translate-y-1/2 size-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                    )}
+                    {errors.cep && !addressLoading && (
+                      <p className="absolute -bottom-5 left-0 text-[10px] font-bold text-rose-500 animate-in slide-in-from-top-1">{errors.cep}</p>
+                    )}
+                  </div>
                 </div>
 
                 <div>
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Cidade</label>
-                  <select value={formData.city} onChange={e => setFormData({ ...formData, city: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none">
-                    <option value="">Selecione...</option>
-                    {cities.map(c => <option key={c.id} value={`${c.name} - ${c.uf}`}>{c.name} - {c.uf}</option>)}
-                  </select>
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Cidade *</label>
+                  {/* Logic: if state exists, show it. If city is manually typed or from API, use text or select logic.
+                      User requested "apareço todos os dados do endereço".
+                      Let's stick to simple Input for City/State for API compat, or Select if strictly required. 
+                      Given the dropdown existed for DB cities, we should keep it but maybe allow override?
+                      For simplicity and to meet the requirement "fill address data", I'll default to text inputs filled by API but editable. 
+                      Using Select restricting to DB cities might break the API fill if the API returns a city not in DB.
+                      Let's use an input with datalist or just an input for flexibility.
+                      Wait, the existing code used a Select. Standardizing to Input for "City" allows API fill freely.
+                   */}
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={formData.city}
+                      onChange={e => setFormData({ ...formData, city: e.target.value })}
+                      className="flex-1 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none"
+                      placeholder="Cidade"
+                    />
+                    <input
+                      type="text"
+                      value={formData.state}
+                      onChange={e => setFormData({ ...formData, state: e.target.value })}
+                      className="w-20 px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none"
+                      placeholder="UF"
+                    />
+                  </div>
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Endereço</label>
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Endereço *</label>
                   <input type="text" value={formData.address} onChange={e => setFormData({ ...formData, address: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
                 </div>
 
-                <div>
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Complemento</label>
+                <div className="md:col-span-2">
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Complemento *</label>
                   <input type="text" value={formData.address_complement} onChange={e => setFormData({ ...formData, address_complement: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
                 </div>
 
                 <div>
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Celular</label>
-                  <input type="tel" value={formData.phone} onChange={e => setFormData({ ...formData, phone: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Celular *</label>
+                  <div className="relative">
+                    <input
+                      type="tel"
+                      value={formatPhone(formData.phone)}
+                      onChange={handlePhoneChange}
+                      placeholder="(99) 99999-9999"
+                      maxLength={15} // (DD) 9XXXX-XXXX
+                      className={`w-full px-4 py-3 rounded-xl border ${errors.phone ? 'border-rose-500 ring-1 ring-rose-500' : 'border-slate-200 dark:border-slate-700'} bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none transition-all`}
+                    />
+                    {errors.phone && (
+                      <p className="absolute -bottom-5 left-0 text-[10px] font-bold text-rose-500 animate-in slide-in-from-top-1">{errors.phone}</p>
+                    )}
+                  </div>
                 </div>
 
                 <div>
-                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Rede Social</label>
+                  <label className="text-xs font-black text-slate-400 uppercase mb-2 block">Rede Social *</label>
                   <input type="text" value={formData.social_network} onChange={e => setFormData({ ...formData, social_network: e.target.value })} className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 font-medium focus:border-primary focus:outline-none" />
                 </div>
 
@@ -575,7 +881,7 @@ const NewPatient: React.FC = () => {
             {activeTab < tabs.length - 1 ? (
               <button
                 type="button"
-                onClick={() => setActiveTab(activeTab + 1)}
+                onClick={handleNextStep}
                 className="flex-1 flex items-center justify-center gap-2 h-14 rounded-2xl bg-primary text-white font-black shadow-lg hover:bg-primary-dark transition-all ml-auto"
               >
                 Próximo

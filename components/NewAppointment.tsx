@@ -12,6 +12,9 @@ const NewAppointment: React.FC = () => {
   const [patients, setPatients] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [schedulingType, setSchedulingType] = useState<'fixed' | 'predicted'>('fixed');
+  const [predictedMonth, setPredictedMonth] = useState('');
+
   const [formData, setFormData] = useState({
     patientId: '',
     date: '',
@@ -29,7 +32,7 @@ const NewAppointment: React.FC = () => {
     const { data: docs } = await supabase.from('doctors').select('*').eq('status', 'Ativo');
     if (docs) setDoctors(docs);
 
-    const { data: pats } = await supabase.from('patients').select('id, name');
+    const { data: pats } = await supabase.from('patients').select('id, name, sus_card');
     if (pats) {
       setPatients(pats);
       if (preSelectedPatientId) {
@@ -55,30 +58,49 @@ const NewAppointment: React.FC = () => {
     setLoading(true);
 
     try {
-      // Check for conflict first
-      const hasConflict = await checkConflict(formData.doctorId, formData.date, formData.time);
-      if (hasConflict) {
-        const confirm = window.confirm('ATENÇÃO: Este médico já possui um agendamento neste horário. Deseja agendar mesmo assim?');
-        if (!confirm) {
+      let finalDate = formData.date;
+      let finalTime = formData.time;
+      let status = 'Agendada';
+      let notes = '';
+
+      if (schedulingType === 'predicted') {
+        if (!predictedMonth) {
+          alert('Por favor, selecione o mês previsto.');
           setLoading(false);
           return;
+        }
+        // Set to 1st of the month
+        finalDate = `${predictedMonth}-01`;
+        finalTime = '08:00'; // Default time
+        status = 'Pendente'; // Mark as pending scheduling
+        notes = `Agendamento previsto para ${new Date(finalDate).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}`;
+      } else {
+        // Check for conflict only for fixed appointments
+        const hasConflict = await checkConflict(formData.doctorId, formData.date, formData.time);
+        if (hasConflict) {
+          const confirm = window.confirm('ATENÇÃO: Este médico já possui um agendamento neste horário. Deseja agendar mesmo assim?');
+          if (!confirm) {
+            setLoading(false);
+            return;
+          }
         }
       }
 
       const appointmentsToCreate = [];
-      const startDate = new Date(formData.date + 'T' + formData.time);
+      const startDate = new Date(finalDate + 'T' + finalTime);
 
       // Create base appointment
       appointmentsToCreate.push({
         patient_id: formData.patientId,
         doctor_id: formData.doctorId,
-        date: formData.date,
-        time: formData.time,
-        status: 'Agendada'
+        date: finalDate,
+        time: finalTime,
+        status: status,
+        notes: notes // Store prediction note if applicable
       });
 
-      // Handle recurring logic
-      if (formData.recurring) {
+      // Handle recurring logic (only for fixed)
+      if (schedulingType === 'fixed' && formData.recurring) {
         // Create 3 more occurrences (total 4)
         for (let i = 1; i <= 3; i++) {
           const nextDate = new Date(startDate);
@@ -104,7 +126,7 @@ const NewAppointment: React.FC = () => {
 
       alert(formData.recurring
         ? `Agendamento recorrente criado com sucesso! (4 ocorrências)`
-        : 'Agendamento realizado com sucesso!');
+        : schedulingType === 'predicted' ? 'Previsão de agendamento registrada com sucesso!' : 'Agendamento realizado com sucesso!');
       navigate('/agenda');
     } catch (error: any) {
       console.error(error);
@@ -128,46 +150,96 @@ const NewAppointment: React.FC = () => {
               <div className="space-y-3">
                 <label className="text-xs font-black uppercase tracking-[0.15em] text-slate-400">Paciente</label>
                 {preSelectedPatientId ? (
-                  <div className="w-full rounded-2xl border-none bg-slate-50 dark:bg-slate-900/50 h-14 px-4 font-bold text-slate-900 dark:text-white flex items-center">
-                    {patients.find(p => p.id === preSelectedPatientId)?.name || 'Carregando...'}
+                  <div className="w-full rounded-2xl border-none bg-slate-50 dark:bg-slate-900/50 p-4 flex flex-col justify-center">
+                    <span className="font-bold text-slate-900 dark:text-white text-lg">{patients.find(p => p.id === preSelectedPatientId)?.name || 'Carregando...'}</span>
+                    <span className="text-xs font-bold text-slate-400 mt-1 uppercase">Cartão SUS: {patients.find(p => p.id === preSelectedPatientId)?.sus_card || 'Não informado'}</span>
                   </div>
                 ) : (
-                  <select
-                    required
-                    value={formData.patientId}
-                    onChange={e => setFormData({ ...formData, patientId: e.target.value })}
-                    className="w-full rounded-2xl border-none bg-slate-50 dark:bg-slate-900/50 h-14 px-4 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/20"
-                  >
-                    <option value="">Selecione...</option>
-                    {patients.map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
+                  <div className="space-y-2">
+                    <select
+                      required
+                      value={formData.patientId}
+                      onChange={e => setFormData({ ...formData, patientId: e.target.value })}
+                      className="w-full rounded-2xl border-none bg-slate-50 dark:bg-slate-900/50 h-14 px-4 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/20"
+                    >
+                      <option value="">Selecione...</option>
+                      {patients.map(p => (
+                        <option key={p.id} value={p.id}>{p.name}</option>
+                      ))}
+                    </select>
+                    {formData.patientId && (
+                      <div className="px-4 py-2 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl flex items-center gap-2">
+                        <span className="material-symbols-outlined text-indigo-500 text-sm">id_card</span>
+                        <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300">
+                          SUS: {patients.find(p => p.id === formData.patientId)?.sus_card || 'Não informado'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-3">
-                  <label className="text-xs font-black uppercase tracking-[0.15em] text-slate-400">Data</label>
-                  <input
-                    required
-                    type="date"
-                    value={formData.date}
-                    onChange={e => setFormData({ ...formData, date: e.target.value })}
-                    className="w-full rounded-2xl border-none bg-slate-50 dark:bg-slate-900/50 h-14 px-4 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
-                <div className="space-y-3">
-                  <label className="text-xs font-black uppercase tracking-[0.15em] text-slate-400">Horário</label>
-                  <input
-                    required
-                    type="time"
-                    value={formData.time}
-                    onChange={e => setFormData({ ...formData, time: e.target.value })}
-                    className="w-full rounded-2xl border-none bg-slate-50 dark:bg-slate-900/50 h-14 px-4 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/20"
-                  />
-                </div>
+              {/* Scheduling Type Toggle */}
+              <div className="p-1 bg-slate-100 dark:bg-slate-800 rounded-xl flex">
+                <button
+                  type="button"
+                  onClick={() => setSchedulingType('fixed')}
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${schedulingType === 'fixed' ? 'bg-white dark:bg-surface-dark shadow-sm text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Data e Hora Fixa
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSchedulingType('predicted')}
+                  className={`flex-1 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${schedulingType === 'predicted' ? 'bg-white dark:bg-surface-dark shadow-sm text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Mês Previsto
+                </button>
               </div>
+
+              {schedulingType === 'fixed' ? (
+                <div className="grid grid-cols-2 gap-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <div className="space-y-3">
+                    <label className="text-xs font-black uppercase tracking-[0.15em] text-slate-400">Data</label>
+                    <input
+                      required
+                      type="date"
+                      value={formData.date}
+                      onChange={e => setFormData({ ...formData, date: e.target.value })}
+                      className="w-full rounded-2xl border-none bg-slate-50 dark:bg-slate-900/50 h-14 px-4 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <label className="text-xs font-black uppercase tracking-[0.15em] text-slate-400">Horário</label>
+                    <input
+                      required
+                      type="time"
+                      value={formData.time}
+                      onChange={e => setFormData({ ...formData, time: e.target.value })}
+                      className="w-full rounded-2xl border-none bg-slate-50 dark:bg-slate-900/50 h-14 px-4 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                  <label className="text-xs font-black uppercase tracking-[0.15em] text-slate-400 flex items-center justify-between">
+                    Mês Previsto
+                    <span className="text-[9px] font-bold uppercase bg-amber-100 text-amber-600 px-2 py-0.5 rounded-md">Data a definir</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      required
+                      type="month"
+                      value={predictedMonth}
+                      onChange={e => setPredictedMonth(e.target.value)}
+                      className="w-full rounded-2xl border-none bg-slate-50 dark:bg-slate-900/50 h-14 px-4 font-bold text-slate-900 dark:text-white focus:ring-2 focus:ring-primary/20"
+                    />
+                  </div>
+                  <p className="text-[10px] font-bold text-slate-400 px-2">
+                    * O agendamento será criado com status "Pendente" para o primeiro dia do mês selecionado.
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-3">
                 <label className="text-xs font-black uppercase tracking-[0.15em] text-slate-400">Médico Especialista</label>
@@ -184,52 +256,54 @@ const NewAppointment: React.FC = () => {
                 </select>
               </div>
 
-              {/* Recurring Option */}
-              <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50">
-                <div className="flex items-center gap-3 mb-3">
-                  <input
-                    type="checkbox"
-                    id="recurring"
-                    checked={formData.recurring}
-                    onChange={e => setFormData({ ...formData, recurring: e.target.checked })}
-                    className="size-5 rounded-lg border-indigo-300 text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="recurring" className="text-sm font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[18px]">update</span>
-                    Repetir agendamento
-                  </label>
-                </div>
-
-                {formData.recurring && (
-                  <div className="pl-8 animate-fade-in-down">
-                    <label className="text-xs font-black uppercase tracking-[0.15em] text-indigo-400 mb-2 block">Frequência</label>
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="recurringType"
-                          value="Semanal"
-                          checked={formData.recurringType === 'Semanal'}
-                          onChange={e => setFormData({ ...formData, recurringType: e.target.value })}
-                          className="text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Semanal (4x)</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="recurringType"
-                          value="Mensal"
-                          checked={formData.recurringType === 'Mensal'}
-                          onChange={e => setFormData({ ...formData, recurringType: e.target.value })}
-                          className="text-indigo-600 focus:ring-indigo-500"
-                        />
-                        <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Mensal (4x)</span>
-                      </label>
-                    </div>
+              {/* Recurring Option - Only available for fixed scheduling */}
+              {schedulingType === 'fixed' && (
+                <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-800/50 animate-in fade-in slide-in-from-top-2">
+                  <div className="flex items-center gap-3 mb-3">
+                    <input
+                      type="checkbox"
+                      id="recurring"
+                      checked={formData.recurring}
+                      onChange={e => setFormData({ ...formData, recurring: e.target.checked })}
+                      className="size-5 rounded-lg border-indigo-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    <label htmlFor="recurring" className="text-sm font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-2">
+                      <span className="material-symbols-outlined text-[18px]">update</span>
+                      Repetir agendamento
+                    </label>
                   </div>
-                )}
-              </div>
+
+                  {formData.recurring && (
+                    <div className="pl-8 animate-fade-in-down">
+                      <label className="text-xs font-black uppercase tracking-[0.15em] text-indigo-400 mb-2 block">Frequência</label>
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="recurringType"
+                            value="Semanal"
+                            checked={formData.recurringType === 'Semanal'}
+                            onChange={e => setFormData({ ...formData, recurringType: e.target.value })}
+                            className="text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Semanal (4x)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="recurringType"
+                            value="Mensal"
+                            checked={formData.recurringType === 'Mensal'}
+                            onChange={e => setFormData({ ...formData, recurringType: e.target.value })}
+                            className="text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Mensal (4x)</span>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="pt-4 flex items-center gap-4">
                 <button
@@ -248,7 +322,7 @@ const NewAppointment: React.FC = () => {
                     <span className="size-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   ) : (
                     <>
-                      Agendar Consulta
+                      Agendar {schedulingType === 'fixed' ? 'Consulta' : 'Previsão'}
                       <span className="material-symbols-outlined">arrow_forward</span>
                     </>
                   )}
