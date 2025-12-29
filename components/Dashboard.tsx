@@ -131,9 +131,9 @@ const Dashboard: React.FC = () => {
                   type="date"
                   value={filters.startDate}
                   onChange={(e) => updateFilter('startDate', e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none"
+                  className="w-full pl-14 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none"
                 />
-                <span className="material-symbols-outlined absolute left-4 top-3.5 text-slate-400 text-[20px] group-focus-within:text-primary transition-colors">calendar_today</span>
+                <span className="material-symbols-outlined absolute left-4 top-3.5 text-slate-400 text-[20px] pointer-events-none group-focus-within:text-primary transition-colors">calendar_today</span>
               </div>
             </div>
             <div className="space-y-2">
@@ -143,9 +143,9 @@ const Dashboard: React.FC = () => {
                   type="date"
                   value={filters.endDate}
                   onChange={(e) => updateFilter('endDate', e.target.value)}
-                  className="w-full pl-11 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none"
+                  className="w-full pl-14 pr-4 py-3 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-white font-bold focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none"
                 />
-                <span className="material-symbols-outlined absolute left-4 top-3.5 text-slate-400 text-[20px] group-focus-within:text-primary transition-colors">event</span>
+                <span className="material-symbols-outlined absolute left-4 top-3.5 text-slate-400 text-[20px] pointer-events-none group-focus-within:text-primary transition-colors">event</span>
               </div>
             </div>
             {/* AI Analysis Button (Replaces Search) */}
@@ -178,7 +178,7 @@ const Dashboard: React.FC = () => {
         {/* Summary Chart Section (Replacing Cards) */}
         <section className="bg-white dark:bg-surface-dark rounded-[32px] p-8 border border-slate-200 dark:border-slate-800 shadow-sm">
           <div className="flex items-center gap-4 mb-8">
-            <div className="size-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-indigo-500">
+            <div className="size-10 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 flex items-center justify-center text-indigo-500 flex-shrink-0">
               <span className="material-symbols-outlined">bar_chart</span>
             </div>
             <div>

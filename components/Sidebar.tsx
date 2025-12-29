@@ -47,14 +47,14 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, setMobileOpen }) => {
       `}>
         <div className="flex h-full flex-col justify-between p-4">
           <div className="flex flex-col gap-6">
-            <div className="flex items-center justify-between px-2">
-              <div className="flex gap-3 items-center">
-                <div className="bg-primary/20 rounded-full size-10 flex items-center justify-center text-primary ring-2 ring-primary/10">
+            <div className="flex items-center justify-between px-2 py-2">
+              <div className="flex gap-3 items-center flex-shrink-0">
+                <div className="bg-primary/20 rounded-full size-10 flex flex-shrink-0 items-center justify-center text-primary ring-2 ring-primary/10">
                   <span className="material-symbols-outlined text-[28px]">pulmonology</span>
                 </div>
-                <div className="flex flex-col">
-                  <h1 className="text-slate-900 dark:text-white text-base font-bold leading-none">Projeto Respirar</h1>
-                  <p className="text-primary text-xs font-semibold leading-normal mt-1">{t('sidebar.subtitle')}</p>
+                <div className="flex flex-col justify-center">
+                  <h1 className="text-slate-900 dark:text-white text-base font-bold leading-tight whitespace-nowrap">Projeto Respirar</h1>
+                  <p className="text-primary text-xs font-semibold leading-none mt-1 opacity-90">{t('sidebar.subtitle')}</p>
                 </div>
               </div>
               {/* Mobile Close Button */}
