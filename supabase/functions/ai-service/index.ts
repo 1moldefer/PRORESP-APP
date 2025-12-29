@@ -15,7 +15,7 @@ Deno.serve(async (req: Request) => {
     }
 
     try {
-        const { action, payload } = await req.json();
+        const body = await req.json();
 
         if (!OPENAI_API_KEY) {
             throw new Error('OpenAI API key not configured');
@@ -24,38 +24,47 @@ Deno.serve(async (req: Request) => {
         let systemPrompt = '';
         let userPrompt = '';
 
-        switch (action) {
-            case 'summary':
-                systemPrompt = `Você é um assistente médico especializado em traqueostomia infantil. Analise o histórico clínico e gere um resumo executivo profissional em português brasileiro.`;
-                userPrompt = `Paciente: ${payload.patient.name}
+        // Support both direct format (systemPrompt, userPrompt) and action-based format
+        if (body.systemPrompt && body.userPrompt) {
+            // Direct format from openaiService.ts
+            systemPrompt = body.systemPrompt;
+            userPrompt = body.userPrompt;
+        } else if (body.action && body.payload) {
+            // Action-based format (legacy support)
+            const { action, payload } = body;
+
+            switch (action) {
+                case 'summary':
+                    systemPrompt = `Você é um assistente médico especializado em traqueostomia infantil. Analise o histórico clínico e gere um resumo executivo profissional em português brasileiro.`;
+                    userPrompt = `Paciente: ${payload.patient.name}
 Idade: ${payload.patient.age || 'N/A'}
 Histórico de Consultas:
 ${payload.historyText}
 
 Gere um resumo clínico estruturado destacando: diagnósticos principais, evolução do quadro, e recomendações atuais.`;
-                break;
+                    break;
 
-            case 'draft':
-                systemPrompt = `Você é um assistente médico que auxilia na redação de notas clínicas para consultas de traqueostomia infantil.`;
-                userPrompt = `Paciente: ${payload.patient.name}
+                case 'draft':
+                    systemPrompt = `Você é um assistente médico que auxilia na redação de notas clínicas para consultas de traqueostomia infantil.`;
+                    userPrompt = `Paciente: ${payload.patient.name}
 Última Consulta: ${payload.lastAppointmentText}
 Condições Atuais: ${JSON.stringify(payload.conditions)}
 
 Sugira uma nota clínica estruturada para a próxima consulta.`;
-                break;
+                    break;
 
-            case 'surgical-summary':
-                systemPrompt = `Você é um assistente médico especializado em análise de histórico cirúrgico pediátrico.`;
-                userPrompt = `Paciente: ${payload.patientName}
+                case 'surgical-summary':
+                    systemPrompt = `Você é um assistente médico especializado em análise de histórico cirúrgico pediátrico.`;
+                    userPrompt = `Paciente: ${payload.patientName}
 Histórico Cirúrgico:
 ${payload.historyText}
 
 Gere uma síntese cronológica e analítica do histórico cirúrgico, destacando procedimentos, evoluções e pontos de atenção.`;
-                break;
+                    break;
 
-            case 'dashboard-analysis':
-                systemPrompt = `Você é um analista de dados clínicos especializado em gestão de saúde pública e traqueostomia infantil. Analise os dados do dashboard e gere um relatório executivo profissional em português brasileiro.`;
-                userPrompt = `**Período de Análise:** ${payload.period}
+                case 'dashboard-analysis':
+                    systemPrompt = `Você é um analista de dados clínicos especializado em gestão de saúde pública e traqueostomia infantil. Analise os dados do dashboard e gere um relatório executivo profissional em português brasileiro.`;
+                    userPrompt = `**Período de Análise:** ${payload.period}
 
 **Dados Consolidados:**
 ${payload.stats}
@@ -72,10 +81,13 @@ ${payload.stats}
 - Seja objetivo e direto
 - Priorize insights acionáveis
 - Mantenha tom profissional e técnico`;
-                break;
+                    break;
 
-            default:
-                throw new Error('Invalid action');
+                default:
+                    throw new Error('Invalid action');
+            }
+        } else {
+            throw new Error('Missing systemPrompt/userPrompt or action/payload');
         }
 
         // Call OpenAI API
